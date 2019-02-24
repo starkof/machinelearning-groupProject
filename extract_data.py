@@ -5,9 +5,6 @@ import gzip
 from pymongo import MongoClient
 
 
-# mongo.connect('amazon_books.book_reviews')
-
-
 client = MongoClient('localhost', 27017)
 db = client['amazon_books']
 database = db['book_reviews']

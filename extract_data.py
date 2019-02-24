@@ -26,7 +26,17 @@ for l in parse("data/reviews_Books.json.gz"):
     if n % 1000 == 0:
         print(l)
 
-    database.insert(json.loads(l))
+    data = json.loads(l)
+
+    try:
+        del data['reviewerName']
+        del data['reviewText']
+        del data['summary']
+    except KeyError:
+        pass
+
+    database.insert(data)
+    # print(data)
 
     n += 1
 

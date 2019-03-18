@@ -24,10 +24,7 @@ with open('data/user_data.json') as f:
         except KeyError:
             pass
 
-        # print('books', data['books'][0]['unix_review_time']['$numberInt'])
-
         for book in data['books']:
-
             book['rating'] = int(book['rating']['$numberInt'])
             book['unix_review_time'] = int(book['unix_review_time']['$numberInt'])
 

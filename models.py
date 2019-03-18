@@ -2,24 +2,38 @@ from mongoengine import *
 
 
 class Book(EmbeddedDocument):
-    bookID = StringField()
+    book_id = StringField()
     rating = IntField()
+    unix_review_time = IntField()
 
 
-class User(Document):
-    userID = StringField(required=True)
+class Users(Document):
+    user_id = StringField(required=True)
     books = ListField(EmbeddedDocumentField(Book))
 
     meta = {'allow_inheritance': True}
 
 
-class TrainingSet(User):
+class BookReviews(DynamicDocument):
+    meta = {
+        'collection': 'book_reviews'
+    }
+
+    reviewerID = StringField()
+    asin = StringField()
+    helpful = ListField(IntField())
+    overall = IntField()
+    unixReviewTime = IntField()
+    reviewTime = StringField()
+
+
+class TrainingSet(Users):
     pass
 
 
-class TestingSet(User):
+class TestingSet(Users):
     pass
 
 
-class TuningSet(User):
+class TuningSet(Users):
     pass

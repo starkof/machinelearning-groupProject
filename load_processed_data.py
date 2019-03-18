@@ -7,7 +7,7 @@ from pymongo import MongoClient
 
 client = MongoClient('localhost', 27017)
 db = client['amazon_books']
-database = db['dummy_users']
+# database = db['users']
 
 
 with open('data/user_data.json') as f:

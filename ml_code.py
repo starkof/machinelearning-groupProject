@@ -8,6 +8,11 @@ import sklearn.metrics as metric
 
 mongo.connect('amazon_books')
 
+# labels
+# books the user liked = 1
+# books the user has not read = 0
+# books the user did not like = -1
+
 
 def create_book_and_user_indexes(maximum):
     book_ids = {}
@@ -26,22 +31,33 @@ def create_book_and_user_indexes(maximum):
 
             n += 1
 
-    books = json.dumps(book_ids)
-    users = json.dumps(user_ids)
+    # books = json.dumps(book_ids)
+    # users = json.dumps(user_ids)
 
-    with open('book_indexes.json', 'w') as f:
-        print(books, file=f)
+    with open('book_indexes.csv', 'w') as f:
+        for b in book_ids:
+            print(','.join([b, str(book_ids[b])]), file=f)
 
-    with open('user_indexes.json', 'w') as f:
-        print(users, file=f)
+    with open('user_indexes.csv', 'w') as f:
+        for u in user_ids:
+            print(','.join([u, str(user_ids[u])]), file=f)
+
+
+def load_indexes(filename):
+    indexes = {}
+
+    with open(filename) as f:
+        for line in f:
+            line = line.rstrip().split(',')
+            indexes[line[0]] = int(line[1])
+
+    return indexes
 
 
 def create_sparse_matrix():
 
-    with open('book_indexes.json') as f:
-        book_indexes = json.loads(f.read())
-    with open('user_indexes.json') as f:
-        user_indexes = json.loads(f.read())
+    book_indexes = load_indexes('book_indexes.csv')
+    user_indexes = load_indexes('user_indexes.csv')
 
     with open('data/sparse_matrix.csv', 'w') as f:
         n = 0
@@ -56,6 +72,8 @@ def create_sparse_matrix():
             for book in Users.objects(user_id=user)[0].books:
                 if book.rating > 3:
                     line[book_indexes[book.book_id]] = 1
+                elif book.rating <= 3:
+                    line[book_indexes[book.book_id]] = -1
 
             if n % 1000 == 0:
                 print(line)
@@ -90,8 +108,8 @@ def svd_sparse_matrix(max_rows):
     return u, s, vh
 
 
-def train():
-    samples = 2000
+def run_model():
+    samples = 10
     print('initializing')
     mlp = MLPClassifier(solver='sgd', hidden_layer_sizes=(1, 1), activation='relu',
                         learning_rate='adaptive', max_iter=500)
@@ -106,6 +124,23 @@ def train():
 
     print('performing svd')
     x_train, s, vh = np.linalg.svd(y_train, full_matrices=False)
+    print('xtrain')
+    print(x_train)
+    print()
+
+    print('s')
+    print(s)
+    print()
+
+    print('vh')
+    print(vh)
+    print()
+
+    print('y_train')
+    print(y_train)
+    print()
+
+    print()
     x_test, s, vh = np.linalg.svd(y_test, full_matrices=False)
 
     print('training')
@@ -127,4 +162,4 @@ if __name__ == '__main__':
     # create_book_and_user_indexes(20000)
     # create_sparse_matrix()
     # svd_sparse_matrix()
-    train()
+    run_model()

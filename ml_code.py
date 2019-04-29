@@ -5,6 +5,7 @@ import json
 from time import time
 from sklearn.neural_network import MLPClassifier
 import sklearn.metrics as metric
+import random
 
 mongo.connect('amazon_books')
 
@@ -20,25 +21,35 @@ def create_book_and_user_indexes(maximum):
 
     print('initializing')
     n = 0
-    for user in Users.objects[:maximum]:
-        user_ids[user.user_id] = len(user_ids)
+    n_users = 0
+    for user in Users.objects.all():
 
-        for book in user.books:
-            if n % 1000 == 0:
-                print(book.book_id)
-            if book.book_id not in book_ids:
-                book_ids[book.book_id] = len(book_ids)
+        if len(user.books) > 2:
+            n_users += 1
+            print(user.id, len(user.books))
 
-            n += 1
+            user_ids[user.user_id] = len(user_ids)
+
+            for book in user.books:
+                if n % 1000 == 0:
+                    print(book.book_id)
+
+                if book.book_id not in book_ids:
+                    book_ids[book.book_id] = len(book_ids)
+
+                n += 1
+
+        if n_users == maximum:
+            break
 
     # books = json.dumps(book_ids)
     # users = json.dumps(user_ids)
 
-    with open('book_indexes.csv', 'w') as f:
+    with open('book_indexes.txt', 'w') as f:
         for b in book_ids:
             print(','.join([b, str(book_ids[b])]), file=f)
 
-    with open('user_indexes.csv', 'w') as f:
+    with open('user_indexes.txt', 'w') as f:
         for u in user_ids:
             print(','.join([u, str(user_ids[u])]), file=f)
 
@@ -56,8 +67,8 @@ def load_indexes(filename):
 
 def create_sparse_matrix():
 
-    book_indexes = load_indexes('book_indexes.csv')
-    user_indexes = load_indexes('user_indexes.csv')
+    book_indexes = load_indexes('book_indexes.txt')
+    user_indexes = load_indexes('user_indexes.txt')
 
     with open('data/sparse_matrix.csv', 'w') as f:
         n = 0
@@ -73,7 +84,7 @@ def create_sparse_matrix():
                 if book.rating > 3:
                     line[book_indexes[book.book_id]] = 1
                 elif book.rating <= 3:
-                    line[book_indexes[book.book_id]] = -1
+                    line[book_indexes[book.book_id]] = 0
 
             if n % 1000 == 0:
                 print(line)
@@ -108,58 +119,103 @@ def svd_sparse_matrix(max_rows):
     return u, s, vh
 
 
-def run_model():
-    samples = 10
-    print('initializing')
-    mlp = MLPClassifier(solver='sgd', hidden_layer_sizes=(1, 1), activation='relu',
-                        learning_rate='adaptive', max_iter=500)
+def run_model(max_users=10):
+    book_indexes = load_indexes('book_indexes.txt')
+    user_indexes = load_indexes('user_indexes.txt')
 
-    print('fetching data')
-    y_data = np.genfromtxt('data/sparse_matrix.csv', delimiter=',', max_rows=samples)
+    sparse_matrix = np.genfromtxt('data/sparse_matrix.csv', delimiter=',')
 
-    y_train = y_data[:(samples//2)]
-    y_test = y_data[(samples//2):]
+    u, s, x_data = np.linalg.svd(sparse_matrix, full_matrices=False)
 
-    del y_data
-
-    print('performing svd')
-    x_train, s, vh = np.linalg.svd(y_train, full_matrices=False)
-    print('xtrain')
-    print(x_train)
+    print('sparse_matrix')
+    print(sparse_matrix.shape)
+    print(sparse_matrix)
     print()
 
-    print('s')
-    print(s)
-    print()
+    user_models = {}
 
-    print('vh')
-    print(vh)
-    print()
+    k = 0
+    for user_id in user_indexes:
+        if k == max_users:
+            break
 
-    print('y_train')
-    print(y_train)
-    print()
+        k += 1
 
-    print()
-    x_test, s, vh = np.linalg.svd(y_test, full_matrices=False)
+        mlp = MLPClassifier(solver='sgd', hidden_layer_sizes=(10, 10), activation='relu',
+                                learning_rate='adaptive', max_iter=5000)
 
-    print('training')
-    mlp.fit(x_train, y_train)
+        user = Users.objects(user_id=user_id)[0]
 
-    print('predicting')
-    y_pred = mlp.predict(x_test)
-    print([i for i in y_pred[:1]])
+        training_books = []
+        training_ratings = []
 
-    accuracy = metric.accuracy_score(np.array(y_test).flatten(), np.array(y_pred).flatten(), normalize=True)
-    fmeasure = metric.f1_score(y_test.flatten(), y_pred.flatten(), average='weighted')
+        testing_books = []
+        testing_ratings = []
 
-    print('accuracy =', accuracy)
-    print('fmeasure =', fmeasure)
+        n = 0
+        for book in user.books:
+            book_position = book_indexes[book.book_id]
+            user_position = user_indexes[user.user_id]
+
+            book_column = x_data[:, book_position]
+
+            book_column = book_column * s
+
+            # print(f'book position = {book_position}, user position = {user_position}')
+
+            data_len = len(user.books)
+
+            if n > data_len//2:
+                training_books.append(list(book_column))
+                training_ratings.append(sparse_matrix[user_position, book_position])
+            else:
+                testing_books.append(list(book_column))
+                testing_ratings.append(sparse_matrix[user_position, book_position])
+
+            n += 1
+
+            # print('book column')
+            # print(book_column, book_position)
+            # print()
+
+        training_books = np.array(training_books)
+        training_ratings = np.array(training_ratings)
+
+        # print('book ratings')
+        # print(training_ratings)
+        # print()
+        #
+        # print('reduced books')
+        # print(training_books)
+        # print()
+
+        mlp.fit(training_books, training_ratings)
+
+        # print('predictions probabilities')
+        # print(mlp.predict_proba(testing_books))
+
+        print('testing ratings')
+        print(testing_ratings)
+
+        print('predictions')
+        predicted_ratings = mlp.predict(testing_books)
+        print(predicted_ratings)
+
+        accuracy = metric.accuracy_score(predicted_ratings, testing_ratings)
+        fmeasure = metric.f1_score(predicted_ratings, testing_ratings)
+        print(f'accuracy = {accuracy}')
+        print(f'f-measure = {fmeasure}')
+        print()
+        print()
+
+        user_models[user.user_id] = mlp
+
+        # print(user.books)
 
 
 if __name__ == '__main__':
     # sparse_matrix()
-    # create_book_and_user_indexes(20000)
+    # create_book_and_user_indexes(1000)
     # create_sparse_matrix()
-    # svd_sparse_matrix()
+    # svd_sparse_matrix(10)
     run_model()
